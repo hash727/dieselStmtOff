@@ -1,0 +1,226 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider   = "prisma-client-js"
+  // engineType = "library"
+  // output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // url      = env("DATABASE_URL")
+}
+
+model Office {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique //e.g., " Main Exchange"
+  location  String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  users           User[]          @relation("UserOffices")
+  engine          Engine?
+  engineLogs      EngineLog[]
+  dieselLogs      DieselLog[]
+  monthlyBalances MonthlyBalance[]
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  MANAGER
+}
+
+//  --- AUTHENTICATION MODELS (NextAuth +_ Google + credentials)
+
+model User {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role            UserRole  @default(USER)  // Default to standard user
+  activeOfficeId  String?   @db.Uuid // ADD THIS FIELD TO STORE PREFERENCE
+  name            String?
+  username        String?   @unique
+  password        String? // Hashed password for credentail login
+  email           String?   @unique
+  emailVerified   DateTime?
+  image           String?
+  
+  offices         Office[]  @relation("UserOffices")
+
+  accounts        Account[]
+  sessions        Session[]
+
+  // Relations to logs
+  engineLogs      EngineLog[]
+  dieselLogs      DieselLog[]
+  engineUpdates   Engine[]    @relation("EngineUpdates")
+}
+
+model Account {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String  @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionToken String   @unique
+  userId       String   @db.Uuid
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Engine {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  make             String
+  capacity         String // e.g. "50 KVA"
+  serialNumber     String     @unique
+  installationDate DateTime
+  lastServiceDate  DateTime
+  lastServiceHours Float?     @default(0) //Meter reading at last B-check
+  consumptionRate  Float // liters per hour
+  officeId         String     @db.Uuid @unique
+  office           Office     @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  updatedAt        DateTime?  @updatedAt
+  updatedById      String?    @db.Uuid
+  updatedBy        User?      @relation("EngineUpdates", fields: [updatedById], references: [id])
+}
+
+model EngineLog {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date              DateTime  @default(now())
+  powerOff          DateTime?
+  engineOn          DateTime?
+  powerOn           DateTime?
+  engineOff         DateTime?
+
+  powerCutDuration  Float? // calculated in minutes/hours
+  engineRunDuration Float? // calculated in minutes/hours
+  openMeterReading  Float?
+  closeMeterReading Float?
+  openingDiesel     Float?
+  dieselConsumption Float?
+
+  userId            String  @db.Uuid
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  officeId          String  @db.Uuid
+  office            Office  @relation(fields: [officeId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([officeId])
+}
+
+model DieselLog {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date     DateTime @default(now())
+  quantity Float //Diesel in liters
+  userId   String   @db.Uuid
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  officeId String   @db.Uuid// Which office the fuel was filled for
+  office   Office   @relation(fields: [officeId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([officeId])
+}
+
+model VerificationToke {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model MonthlyBalance {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  month          Int
+  year           Int
+  openingBalance Float
+  closingBalance Float? // Saved when the month is "Frozen"
+  isFrozen       Boolean @default(false)
+  officeId       String  @db.Uuid
+  office         Office  @relation(fields: [officeId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, month, year])
+}
+
+
+model LeasedLine {
+  id              String   @id @default(cuid())
+  sNo             Int      @unique
+  sdca            String
+  customerName    String
+  lcId            String   @unique
+  billingAcNo     String
+  doc             DateTime // Date of Commissioning
+  wanIp           String
+  subnet          String
+  gateway         String
+  vlan            String
+  vrf             String
+  serviceType     String
+  bandwidth       String
+  media           String
+  contactNumber   String
+  bsnlTip         String   // BSNL or TIP managed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  pings           PingHistory[]
+}
+
+model PingHistory {
+  id           String     @id @default(cuid())
+  status       String     // "Online" or "Offline"
+  latency      String?
+  timestamp    DateTime   @default(now())
+  leasedLineId String
+  leasedLine   LeasedLine @relation(fields: [leasedLineId], references: [id], onDelete: Cascade)
+}
+
+//  OlT Section
+
+enum OltType {
+  GPON
+  GEPON
+  EPON
+}
+
+enum AreaType {
+  URBAN
+  RURAL
+}
+
+model Olt {
+  id                 String   @id @default(uuid())
+  name               String   @unique
+  ip                 String   @unique
+  franchisee         String
+  type               OltType
+  make               String
+  installationDate   DateTime
+  outerVlan          Int
+  capacity           String
+  area               AreaType
+  location           String
+  description        String?
+  status             Boolean  @default(true) // true = Active, false = Inactive
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
