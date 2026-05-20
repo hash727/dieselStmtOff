@@ -5,7 +5,7 @@ export function GlobalFooter() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="w-full border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 py-6 px-4 mt-auto">
+    <footer className="w-full border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 py-6 px-4 mt-auto z-50">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           

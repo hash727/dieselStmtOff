@@ -1,0 +1,301 @@
+// app/olt/_components/netlink-manage-sheet.tsx
+"use client";
+
+import { useState, useMemo } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { getOltOnuDetails, getNetlinkOnuPower, getOnuServices, getNetlinkInventory } from "@/app/actions/olt-management";
+import { Badge } from "@/components/ui/badge";
+import { 
+  Loader2, RefreshCw, Terminal, Search, ChevronRight, 
+  Users, Cpu, Server, Zap, ArrowLeft, Wifi, Activity, Monitor
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+export function NetlinkManageSheet1({ olt, isOpen, onOpenChange }: any) {
+  const [loading, setLoading] = useState(false);
+  const [onuData, setOnuData] = useState<any[]>([]);
+  const [powerData, setPowerMap] = useState<Record<string, string>>({});
+  const [serviceCards, setServiceCards] = useState<any[]>([]);
+  const [selectedOnu, setSelectedOnu] = useState<any | null>(null);
+  const [loadingServices, setLoadingServices] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedPort, setSelectedPort] = useState<string>("1");
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
+
+  // --- FETCH ALL ONUS ---
+//   const fetchInventory = async () => {
+//     setLoading(true);
+//     try {
+//       const res = await getOltOnuDetails(olt.id);
+      
+//       // Check for success AND ensure data is an array
+//       if (res.success && Array.isArray(res.data)) {
+//         setOnuData(res.data);
+//         toast.success("Netlink Chassis Synced");
+//       } else {
+//         // Handle the case where res.data is a string (error) or undefined
+//         const errorMsg = typeof res.data === 'string' ? res.data : "Invalid data format";
+//         toast.error(errorMsg);
+//         setOnuData([]); // Reset to empty array to prevent crash
+//       }
+//     } catch (e) { 
+//       toast.error("Connection Failed"); 
+//     } finally { 
+//       setLoading(false); 
+//     }
+//   };
+
+    const fetchPortData = async (portId: string) => {
+        setLoading(true);
+        setSelectedPort(portId);
+        
+        try {
+            const res = await getNetlinkInventory(olt.id, portId);
+            
+            // Check success AND data type
+            if (res.success && Array.isArray(res.data)) {
+              if (res.data.length === 0) {
+                toast.warning(`Port ${portId} is empty or command failed.`);
+              }
+              setOnuData(res.data);
+              toast.success(`Port ${portId} Sync Complete`);
+            } else {
+              // Show the actual error message from the server if possible
+              const errorMsg = res.error || "Telemetry fetch error";
+              toast.error(errorMsg);
+              console.error("Netlink Error Detail:", res);
+            }
+          } catch (e) {
+            toast.error("Bridge Synchronization Timeout");
+          } finally {
+            setLoading(false);
+          }
+    };
+  
+
+  // --- SEQUENTIAL POWER SCAN FOR NETLINK ---
+  const fetchPortPower = async (portId: string) => {
+    const currentOnus = onuData.filter(o => o.port === portId);
+    if (!currentOnus.length) return;
+    
+    setIsBulkLoading(true);
+    toast.info(`Port ${portId}: Rapid Laser Scan Initialized...`);
+  
+    // Extract just the indexes [1, 2, 4, 5...]
+    const indexes = currentOnus.map(o => o.pon);
+  
+    // ONE SINGLE REQUEST for the whole port
+    const res = await getNetlinkOnuPower(olt.id, portId, indexes);
+  
+    if (res.success && res.data && typeof res.data === 'object') {
+      setPowerMap(prev => ({ 
+        ...prev, 
+        ...(res.data as Record<string, string>) 
+    }));
+      toast.success(`Port ${portId} optics updated`);
+    } else {
+      toast.error("Bulk scan failed or returned invalid data");
+    }
+  
+    setIsBulkLoading(false);
+  };
+
+  // --- SERVICE INSPECTOR ---
+  const handleInspect = async (onu: any) => {
+    setSelectedOnu(onu);
+    setLoadingServices(true);
+    try {
+      const res = await getOnuServices(olt.id, `${onu}`);
+      
+      // Explicitly check if data is an array before setting state
+      if (res.success && Array.isArray(res.data)) {
+        setServiceCards(res.data);
+      } else {
+        setServiceCards([]); // Safety fallback
+      }
+    } catch (e) { 
+      toast.error("CLI Timeout"); 
+    } finally { 
+      setLoadingServices(false); 
+    }
+  };
+
+  // --- DATA FILTERING ---
+  const filteredOnus = onuData.filter(o => 
+    o.port === selectedPort && 
+    (o.sn.toLowerCase().includes(searchQuery.toLowerCase()) || o.account.includes(searchQuery))
+  );
+
+  const portStats = useMemo(() => {
+    const stats: any = {};
+    [1,2,3,4,5,6,7,8].forEach(p => {
+        const items = onuData.filter(o => o.port === p.toString());
+        stats[p] = { total: items.length, online: items.filter(o => o.status === 'Operational').length };
+    });
+    return stats;
+  }, [onuData]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[98vw]! w-[98vw] h-[96vh] p-0 flex flex-col bg-slate-950 border-none shadow-2xl rounded-[3rem] overflow-hidden">
+        
+        {/* HEADER SECTION */}
+        <div className="p-8 flex items-center justify-between bg-slate-900/50 shrink-0 border-b border-white/5">
+          <div className="flex items-center gap-6">
+            <div className="p-4 bg-orange-600 rounded-[1.5rem] shadow-xl shadow-orange-500/20 text-white">
+              <Monitor className="h-7 w-7" />
+            </div>
+            <div>
+              <DialogTitle className="text-2xl font-black text-white uppercase tracking-tighter italic">
+                NETLINK <span className="text-orange-500 text-sm not-italic ml-2 tracking-widest">NMS v4.0</span>
+              </DialogTitle>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1">
+                {olt?.name} • IP: {olt?.ip}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Button 
+                // onClick={() => void} 
+                disabled={loading} 
+                className="bg-white hover:bg-slate-200 text-slate-950 font-black text-xs uppercase px-8 h-12 rounded-2xl transition-all active:scale-95"
+            >
+              {loading ? <Loader2 className="animate-spin mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Refresh Chassis
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col overflow-hidden p-8 gap-8">
+          
+          {/* 1. PHYSICAL FRONT PANEL (CHASSIS HUD) */}
+          {!selectedOnu && (
+            <div className="bg-black/40 p-8 rounded-[2.5rem] border border-white/5 shadow-inner shrink-0">
+              <div className="flex items-center justify-between mb-6">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /> SFP Module State
+                </span>
+                <Badge variant="outline" className="border-orange-500/30 text-orange-500 text-[10px] font-black uppercase rounded-lg">8-Port GPON Fixed Chassis</Badge>
+              </div>
+              <div className="grid grid-cols-8 gap-4">
+                {[1,2,3,4,5,6,7,8].map(p => (
+                  <button 
+                    key={p} 
+                    onClick={() => { 
+                        setSelectedPort(p.toString()); 
+                        fetchPortData(p.toString()); 
+                        fetchPortPower(p.toString()); 
+                    }}
+                    className={cn(
+                      "h-28 rounded-3xl border-2 flex flex-col items-center justify-center gap-3 transition-all relative overflow-hidden group",
+                      selectedPort === p.toString() ? "border-orange-500 bg-orange-500/10" : "border-slate-800 bg-slate-900/50 hover:border-slate-600"
+                    )}
+                  >
+                    <div className="w-12 h-4 bg-black rounded-b-lg border-x border-b border-slate-700 flex items-center justify-center -mt-8">
+                        <span className="text-[9px] font-black text-slate-600">{p}</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                        <span className="text-lg font-black text-white">{portStats[p]?.total || 0}</span>
+                        <span className="text-[8px] font-bold text-slate-500 uppercase">ONUs</span>
+                    </div>
+                    {portStats[p]?.online < portStats[p]?.total && (
+                        <div className="absolute bottom-2 h-1 w-8 bg-red-500 rounded-full shadow-[0_0_8px_#ef4444]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 2. SUBSCRIBER TILES OR SERVICE DETAIL */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            {!selectedOnu ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between bg-slate-900/30 p-4 rounded-3xl border border-white/5 sticky top-0 backdrop-blur-xl z-20">
+                   <div className="flex items-center gap-4">
+                      <Users className="h-5 w-5 text-orange-500" />
+                      <h3 className="text-lg font-black text-white uppercase tracking-tighter">Port {selectedPort} Subscribers</h3>
+                      {isBulkLoading && <Badge className="bg-orange-500 text-white animate-pulse border-none text-[9px] px-3">Laser Scan Active...</Badge>}
+                   </div>
+                   <div className="relative w-96">
+                      <Search className="absolute left-4 top-3 h-4 w-4 text-slate-500" />
+                      <Input 
+                        placeholder="Filter Serial or Account..." 
+                        className="pl-12 h-12 bg-black/40 border-none rounded-2xl text-white text-xs font-bold"
+                        value={searchQuery}
+                        onChange={(e)=>setSearchQuery(e.target.value)}
+                      />
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 pb-10">
+                  {filteredOnus.map((onu, i) => {
+                    const power = powerData[onu.pon];
+                    const isCritical = power && parseFloat(power) <= -27;
+                    return (
+                      <div 
+                        key={i} onClick={() => handleInspect(onu)}
+                        className={cn(
+                            "p-6 rounded-[2rem] border-2 cursor-pointer transition-all hover:scale-[1.03] active:scale-95 group relative overflow-hidden",
+                            onu.status === 'Operational' ? "bg-slate-900/40 border-slate-800 hover:border-orange-500/50" : "bg-red-500/5 border-red-500/20"
+                        )}
+                      >
+                        <div className="flex justify-between items-start mb-6">
+                           <div className="h-10 w-10 rounded-2xl bg-black/40 flex items-center justify-center border border-white/5">
+                              <Monitor className={cn("h-5 w-5", onu.status === 'Operational' ? "text-emerald-500" : "text-red-500")} />
+                           </div>
+                           <Badge className={cn("text-[9px] font-black uppercase rounded-lg border-none", onu.status === 'Operational' ? "bg-emerald-500 text-white" : "bg-red-500 text-white")}>{onu.status}</Badge>
+                        </div>
+                        <div className="space-y-1 mb-6">
+                           <h4 className="text-xs font-black text-white uppercase">ID: {onu.pon} <span className="text-slate-600 ml-2 font-mono">{onu.sn}</span></h4>
+                           <p className="text-sm font-black text-slate-400">{onu.account}</p>
+                        </div>
+                        <div className={cn("p-3 rounded-2xl flex items-center justify-between", isCritical ? "bg-red-500/20" : "bg-black/40")}>
+                           <span className="text-[9px] font-black text-slate-500 uppercase">Power Level</span>
+                           <div className="flex items-center gap-1">
+                              <Zap className={cn("h-3 w-3", isCritical ? "text-red-500" : "text-orange-500")} />
+                              <span className={cn("text-xs font-black font-mono", isCritical ? "text-red-500" : "text-white")}>{power || '--'}</span>
+                           </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-300">
+                <Button variant="ghost" onClick={() => setSelectedOnu(null)} className="text-slate-400 hover:text-white uppercase font-black text-xs">
+                  <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+                </Button>
+                {loadingServices ? (
+                  <div className="py-40 text-center"><Loader2 className="animate-spin h-12 w-12 mx-auto text-orange-500 mb-4" /><p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Decoding Service Stack...</p></div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {serviceCards.map((svc, i) => (
+                      <div key={i} className="bg-slate-900 border border-white/5 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-6 opacity-10"><Wifi className="h-20 w-20 text-white" /></div>
+                        <div className="flex justify-between items-center mb-8">
+                          <Badge className="bg-orange-500 text-white border-none uppercase text-[10px] px-4 py-1 rounded-full">{svc.type}</Badge>
+                          <span className="text-[10px] font-black text-slate-500 uppercase">Index: {svc.uni}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-y-6">
+                           <div><p className="text-[9px] font-black text-slate-500 uppercase mb-1">Service State</p><p className="text-sm font-black text-emerald-500">{svc.state}</p></div>
+                           <div><p className="text-[9px] font-black text-slate-500 uppercase mb-1">VLAN ID</p><p className="text-sm font-black text-white">#{svc.vlan}</p></div>
+                           <div className="col-span-2"><p className="text-[9px] font-black text-slate-500 uppercase mb-1">Bandwidth Profile</p><p className="text-xs font-mono font-bold text-slate-300 bg-black/40 p-3 rounded-2xl border border-white/5">{svc.profile}</p></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

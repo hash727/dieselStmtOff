@@ -177,6 +177,30 @@ export default function OltForm() {
         <Input name="location" placeholder="Physical Address / Rack No." required />
       </div>
 
+      <div className="space-y-2">
+        <Label className="text-[10px] font-black uppercase text-slate-400">SSH Username</Label>
+        <Input name="sshUsername" placeholder="admin" defaultValue="admin" className="bg-slate-50 dark:bg-zinc-900" />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-[10px] font-black uppercase text-slate-400">SSH Password</Label>
+        <Input name="sshPassword" type="password" placeholder="••••••••" className="bg-slate-50 dark:bg-zinc-900" />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-[10px] font-black uppercase text-slate-400">Access Protocol</Label>
+        <select 
+          name="protocol" 
+          className="w-full rounded-md border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 p-2 text-sm font-bold"
+        >
+          <option value="SSH">SSH (Secure Shell)</option>
+          <option value="TELNET">TELNET (Legacy)</option>
+        </select>
+        <p className="text-[9px] text-amber-500 font-bold uppercase mt-1">
+          * Alphion typically requires Telnet
+        </p>
+      </div>
+
       <Button type="submit" disabled={isPending} className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
         {isPending ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Cpu className="h-4 w-4 mr-2" />}
         Save OLT Configuration

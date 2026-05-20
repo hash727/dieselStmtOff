@@ -87,10 +87,10 @@ export default async function LeasedLinesPage() {
                     </span>
                   </td>
                   <td className="p-3 text-center">
-                    <PingButton ip={line.wanIp} />
+                    <PingButton ip={line.wanIp} lineId={line.id} />
                   </td>
                   <td className="p-3 text-center">
-                    <PingStatusModal ip={line.wanIp} name={line.customerName} />
+                    <PingStatusModal ip={line.wanIp} name={line.customerName} lineId={line.id} />
                   </td>
                 </tr>
               ))

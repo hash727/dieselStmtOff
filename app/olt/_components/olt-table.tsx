@@ -7,14 +7,25 @@ import { Button } from "@/components/ui/button";
 import { 
   MapPin, Monitor, Cpu, Calendar, Box, 
   Copy, Activity, ExternalLink, MoreVertical, 
-  Settings2
+  Settings2,
+  PenLine
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import Link from "next/link";
 import { Olt } from "@prisma/client";
+import { useState } from "react";
+import { OltManageSheet } from "./olt-manage-sheet";
+import { OltEditDialog } from "./olt-edit-dialog";
+import { NetlinkManageSheet } from "./NetlinkManageSheet";
+import { SyrotechManageSheet } from "./syrotech-manage-sheet";
 
 export default function OltTable({ olts }: { olts: Olt[] }) {
+
+  const [selectedOlt, setSelectedOlt] = useState<Olt | null>(null);
+  const [editOlt, setEditOlt] = useState<Olt | null>(null);
+
+
   
   const copyToClipboard = (ip: string) => {
     navigator.clipboard.writeText(ip);
@@ -107,6 +118,14 @@ export default function OltTable({ olts }: { olts: Olt[] }) {
 
               <TableCell className="text-right px-6">
                 <div className="flex items-center justify-end gap-2">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-8 w-8 text-slate-400 hover:text-blue-600"
+                  onClick={() => setEditOlt(olt)} // Trigger Edit
+                >
+                  <PenLine className="h-4 w-4" /> 
+                </Button>
                   <Button 
                     asChild
                     variant="outline" 
@@ -119,7 +138,12 @@ export default function OltTable({ olts }: { olts: Olt[] }) {
                     </Link>
                   </Button>
                   
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 text-slate-400 hover:text-blue-500"
+                    onClick={() => setSelectedOlt(olt)}
+                  >
                     <Settings2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -128,6 +152,38 @@ export default function OltTable({ olts }: { olts: Olt[] }) {
           ))}
         </TableBody>
       </Table>
+      <OltEditDialog 
+        olt={editOlt} 
+        isOpen={!!editOlt} 
+        onOpenChange={(open: boolean) => !open && setEditOlt(null)} 
+      />
+      {/* <OltManageSheet 
+        olt={selectedOlt} 
+        isOpen={!!selectedOlt} 
+        onOpenChange={(open: boolean) => !open && setSelectedOlt(null)} 
+      /> */}
+
+       {/* --- VENDOR SPECIFIC CONDITIONAL RENDERING --- */}
+       {selectedOlt?.make === "NETLINK" ? (
+        <NetlinkManageSheet 
+          olt={selectedOlt} 
+          isOpen={!!selectedOlt} 
+          onOpenChange={(open: boolean) => !open && setSelectedOlt(null)} 
+        />
+      ) : selectedOlt?.make === "SYROTECH" || selectedOlt?.make === "KHWAHISH" ? (
+        // ✅ NEW SYROTECH HOOK CONDITIONAL TARGET BLOCK
+          <SyrotechManageSheet
+            olt={selectedOlt} 
+            isOpen={!!selectedOlt} 
+            onOpenChange={(open: boolean) => !open && setSelectedOlt(null)} 
+          />
+      ) : (
+        <OltManageSheet 
+          olt={selectedOlt} 
+          isOpen={!!selectedOlt} 
+          onOpenChange={(open: boolean) => !open && setSelectedOlt(null)} 
+        />
+      )}
     </div>
   );
 }

@@ -1,0 +1,275 @@
+// app/olt/_components/syrotech-manage-sheet.tsx
+"use client";
+
+import { useMemo, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { getSyrotechChassisInventory, getSyrotechOpmDiagnostics, getSyrotechPortInventory } from "@/app/actions/olt-management";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, RefreshCw, Server, Cpu, Monitor, ShieldAlert, Layers, Search, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+
+export function SyrotechManageSheet({ olt, isOpen, onOpenChange }: any) {
+  const [loading, setLoading] = useState(false);
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
+  const [chassisMeta, setChassisMeta] = useState<any>({ mac: "N/A", status: "N/A", firmware: "N/A" });
+  const [portCards, setPortCards] = useState<any[]>([]);
+  const [onuData, setOnuData] = useState<any[]>([]); // Added for port data array caches
+  const [powerData, setPowerMap] = useState<Record<string, string>>({});
+  
+  const [selectedPort, setSelectedPort] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "raw">("table");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [rawConsole, setRawConsole] = useState<string>("");
+
+  // --- LASER OPM SWEEP CORE ---
+  const fetchPortOptics = async (portId: string) => {
+    setIsBulkLoading(true);
+    try {
+      const res = await getSyrotechOpmDiagnostics(olt.id, portId);
+      if (res.success && typeof res.data === "object") {
+        const opmResult = res.data as Record<string, string>;
+        const remappedPower: Record<string, string> = {};
+        
+        Object.keys(opmResult).forEach((onuIdx) => {
+          remappedPower[`${portId}/${onuIdx}`] = opmResult[onuIdx];
+        });
+
+        setPowerMap((prev) => ({ ...prev, ...remappedPower }));
+        toast.success(`Port ${portId} Laser Telemetry Synced`);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsBulkLoading(false);
+    }
+  };
+
+  // --- INITIAL CHASSIS FLUSH ---
+  const handleRefreshChassis = async () => {
+    setLoading(true);
+    try {
+      const res = await getSyrotechChassisInventory(olt.id);
+      if (res.success && res.ports) {
+        setChassisMeta(res.data);
+        setPortCards(res.ports);
+        setRawConsole(res.raw || "");
+        toast.success("Syrotech Core Diagnostics Synchronized");
+
+        // Auto-fetch Port 1 list
+        await handlePortClick("1");
+      } else {
+        toast.error(res.error || "Chassis metrics retrieval failed.");
+      }
+    } catch (e) {
+      toast.error("NOC connection handshake failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- PORT ACTION TARGET ---
+  const handlePortClick = async (portId: string) => {
+    setSelectedPort(portId);
+    setLoading(true);
+    try {
+      const res = await getSyrotechPortInventory(olt.id, portId);
+      console.log("ONU Data >>> :", res)
+      if (res.success && Array.isArray(res.data)) {
+        setRawConsole(res.raw || "")
+        setOnuData(prev => {
+          const cleaned = prev.filter(o => o.port !== portId);
+          return [...cleaned, ...res.data];
+        });
+        // Trigger immediate background opm-diag parser sweep
+        await fetchPortOptics(portId);
+        toast.success(`Port ${portId} Subscribers Updated`);
+      }
+    } catch (e) { console.error(e); } 
+    finally { setLoading(false); }
+  };
+
+  // --- FILTER CORE SUBSCRIBERS ---
+  const filteredOnus = useMemo(() => {
+    return onuData.filter(o => 
+      o.port === selectedPort && 
+      (o.sn.toLowerCase().includes(searchQuery.toLowerCase()) || o.mac.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [onuData, selectedPort, searchQuery]);
+
+  // --- COMPUTE PANEL SUMMARY METRICS MATRIX ---
+  const portStats = useMemo(() => {
+    const stats: any = {};
+    portCards.forEach((p) => {
+      stats[p.id] = { total: p.total, online: p.online, offline: p.offline, uptimePercent: p.uptimePercent, interface: p.interface };
+    });
+    return stats;
+  }, [portCards]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[98vw]! w-[98vw] h-[96vh] p-0 flex flex-col bg-slate-100 dark:bg-slate-950 border-none shadow-2xl rounded-[3rem] overflow-hidden">
+        
+        {/* TOP PANEL HUD HEADER BAR */}
+        <div className="p-6 flex items-center justify-between bg-slate-200 dark:bg-slate-900/50 shrink-0 border-b border-white/5">
+          <div className="flex items-center gap-6">
+            <div className="p-4 bg-purple-600 rounded-[1.5rem] shadow-xl shadow-purple-500/20 text-black dark:text-white">
+              <Layers className="h-6 w-6" />
+            </div>
+            <div>
+              <DialogTitle className="text-xl font-black text-black dark:text-white uppercase tracking-tighter italic">
+                {olt?.make} <span className="text-purple-400 text-xs not-italic ml-2 tracking-widest">EPON MONITOR V1.0</span>
+              </DialogTitle>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1">
+                {olt?.name} • NODE BACKPLANE IP: {olt?.ip} • MAC: {chassisMeta.mac}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="bg-slate-200 dark:bg-slate-900 p-1 rounded-xl flex gap-1 border border-black/5 dark:border-white/5 text-black dark:text-white mr-2">
+               <Button size="sm" variant={viewMode === 'table' ? 'secondary' : 'ghost'} onClick={() => setViewMode('table')} className="h-8 px-4 text-[10px] uppercase font-black text-shadow-black dark:text-white">Hardware Dashboard</Button>
+               <Button size="sm" variant={viewMode === 'raw' ? 'secondary' : 'ghost'} onClick={() => setViewMode('raw')} className="h-8 px-4 text-[10px] uppercase font-black text-shadow-black dark:text-white">CLI Output</Button>
+            </div>
+            <Button 
+                onClick={handleRefreshChassis} 
+                disabled={loading} 
+                className="bg-black dark:bg-white hover:bg-slate-900 hover:dark:bg-slate-200 text-slate-200 dark:text-slate-950 font-black text-xs uppercase px-8 h-12 rounded-2xl transition-all active:scale-95 shadow-xl shadow-white/5"
+            >
+              {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Refresh Chassis
+            </Button>
+          </div>
+        </div>
+
+        {/* WORKSPACE CANVAS */}
+        {viewMode === "table" ? (
+          <div className="flex-1 flex flex-col overflow-hidden p-6 gap-6">
+            
+            {/* SYSTEM CORE BLOCK METADATA */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-400/30 dark:bg-slate-900/30 p-5 rounded-[2rem] border border-black/5 dark:border-white/5 shrink-0">
+               <div className="p-1"><span className="text-[8px] font-black text-slate-600 dark:text-slate-500 uppercase block mb-1">Chassis Status</span><Badge className={cn("text-xs font-black uppercase rounded-lg px-3 py-0.5", chassisMeta.status === "Operational" ? "bg-emerald-500/10 text-emerald-400 border-none" : "bg-zinc-800 text-slate-400")}>{chassisMeta.status}</Badge></div>
+               <div className="p-1"><span className="text-[8px] font-black text-slate-500 uppercase block mb-1">Firmware Build</span><span className="text-sm font-mono font-black text-purple-400">{chassisMeta.firmware}</span></div>
+               <div className="p-1"><span className="text-[8px] font-black text-slate-500 uppercase block mb-1">Total Active Interfaces</span><span className="text-sm font-black text-black dark:text-white">{portCards.length || "---"} SFP Modules Online</span></div>
+            </div>
+
+            {/* DYNAMIC VARIABLE HOUSING PANEL GRID (4P, 8P, or 16P Chassis) */}
+            <div className="space-y-4 shrink-0">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-500 block pl-2">Line Card Hardware SFP Slots</span>
+              
+              <div className={cn(
+                "grid gap-4",
+                portCards.length <= 4 && "grid-cols-1 md:grid-cols-2 lg:grid-cols-4",
+                portCards.length === 8 && "grid-cols-2 md:grid-cols-4 lg:grid-cols-8",
+                portCards.length > 8 && "grid-cols-4 md:grid-cols-8 lg:grid-cols-12 xl:grid-cols-16"
+              )}>
+                {portCards.map((port) => {
+                  const isSelected = selectedPort === port.id;
+                  const hasOfflineIssues = port.offline > 0;
+                  return (
+                    <button
+                      key={port.id} onClick={() => handlePortClick(port.id)}
+                      disabled={loading}
+                      className={cn("rounded-[2rem] border-2 p-5 transition-all text-left flex flex-col gap-4 relative overflow-hidden active:scale-98", isSelected ? "border-purple-400 dark:border-purple-500 bg-purple-400/10 dark:bg-purple-500/10 shadow-xl" : "bg-slate-200/40 dark:bg-slate-900/40 border-slate-400/80 dark:border-slate-800/80 hover:border-slate-600 hover:dark:border-slate-700", portCards.length > 8 && "p-3 rounded-2xl gap-2")}
+                    >
+                      {hasOfflineIssues && <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 flex items-center justify-center animate-pulse z-10"><ShieldAlert className="h-3 w-3 text-black dark:text-white" /></div>}
+                      <div className="flex justify-between items-center w-full">
+                        <div className="flex items-center gap-2"><Server className={cn("h-4 w-4", isSelected ? "text-purple-600 dark:text-purple-400" : "text-slate-300 dark:text-slate-500")} /><span className="text-xs font-black text-black dark:text-white">{port.interface}</span></div>
+                        <span className="text-[9px] font-black text-slate-600 dark:text-slate-400">{port.uptimePercent}% UP</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 w-full text-center">
+                         <div className="bg-white/50 dark:bg-black/30 p-2 rounded-xl border dark:border-white/5"><p className="text-[7px] font-black text-slate-600 dark:text-slate-500 uppercase">Online</p><p className="text-xs font-mono font-black text-emerald-400">{port.online}</p></div>
+                         <div className={cn("p-2 rounded-xl border", hasOfflineIssues ? "bg-red-300/10 dark:bg-red-500/10 border-red-500/20" : "bg-white/30 dark:bg-black/30 border-white/5")}><p className="text-[7px] font-black text-slate-500 uppercase">Offline</p><p className={cn("text-xs font-mono font-black", hasOfflineIssues ? "text-red-500" : "text-slate-500")}>{port.offline}</p></div>
+                      </div>
+                      <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden flex">
+                        <div className="h-full bg-emerald-500" style={{ width: `${port.uptimePercent}%` }} />
+                        <div className="h-full bg-red-500" style={{ width: `${100 - port.uptimePercent}%` }} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SUBSCRIBER INFRASTRUCTURE GRID (With Embedded OPM diagnostics laser output) */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-200/10 dark:bg-slate-900/10 rounded-2xl border border-black/5 dark:border-white/5 p-4 space-y-4">
+               <div className="flex justify-between items-center bg-slate-200/40 dark:bg-slate-900/40 p-4 rounded-2xl border border-black/5 dark:border-white/5 sticky top-0 backdrop-blur-xl z-20 shrink-0">
+                  <div className="flex items-center gap-3">
+                     <Users className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                     <h4 className="text-sm font-black text-black dark:text-white uppercase tracking-tight">Port EPON 0/{selectedPort} Subscriber Mapping Grid</h4>
+                     {isBulkLoading && <Badge className="bg-purple-600 text-black dark:text-white animate-pulse border-none text-[8px] px-2.5 h-5 uppercase font-black">OPM Laser Trace Active...</Badge>}
+                  </div>
+                  <div className="relative w-80">
+                     <Search className="absolute left-4 top-3 h-3.5 w-3.5 text-slate-500" />
+                     <Input 
+                       placeholder="Filter by MAC ID or Serial Key..." 
+                       className="pl-11 h-10 bg-white/50 dark:bg-black/50 border-none rounded-xl text-black dark:text-white text-xs font-bold focus-visible:ring-1 focus-visible:ring-purple-500 focus-visible:ring-offset-0" 
+                       value={searchQuery} onChange={(e)=>setSearchQuery(e.target.value)} 
+                     />
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-6">
+                 {filteredOnus.map((onu, i) => {
+                   const compositeKey = `${onu.port}/${onu.pon}`;
+                   const powerValue = powerData[compositeKey];
+                   
+                   const numericPower = powerValue ? parseFloat(powerValue) : null;
+                   const isCritical = numericPower !== null && numericPower <= -27.00;
+                   const isWarning = numericPower !== null && numericPower <= -24.00 && numericPower > -27.00;
+
+                   return (
+                     <div key={i} className={cn("p-5 rounded-[2rem] border transition-all bg-slate-200/30 dark:bg-slate-900/30 border-slate-400/80 dark:border-slate-800/80 hover:border-purple-500/40 relative overflow-hidden group", onu.status !== 'Operational' && "border-red-500/20 bg-red-500/5")}>
+                       <div className="flex justify-between items-start mb-4">
+                          <Badge className={cn("text-[8px] font-black uppercase px-2.5 border-none h-5 tracking-widest", onu.status === 'Operational' ? "bg-emerald-700/50 dark:bg-emerald-500/10 text-emerald-100 dark:text-emerald-400" : "bg-red-500/10 text-red-400")}>
+                            {onu.status === 'Operational' ? 'ONLINE' : 'OFFLINE'}
+                          </Badge>
+                          <span className="text-[10px] font-mono font-black text-slate-800 dark:text-slate-500 tracking-wide truncate max-w-[110px]">{onu.sn}</span>
+                       </div>
+                       <div className="space-y-1 mb-4">
+                          <h4 className="text-xs font-black text-black dark:text-white tracking-tight">ONU Index: #{onu.pon} <span className="text-purple-600 dark:text-purple-400 font-mono">[{onu.vendorID} - {onu.model}]</span></h4>
+                          <p className="text-[10px] font-mono font-bold text-slate-900 dark:text-slate-400 tracking-wide truncate">MAC: {onu.mac}</p>
+                       </div>
+                       <div className="grid grid-cols-2 gap-2 text-left relative z-10">
+                          <div className="bg-white/60 dark:bg-black/30 p-2 rounded-xl border border-black/15 dark:border-white/5">
+                             <span className="text-[7px] font-black text-slate-500 uppercase block">Distance</span>
+                             <span className="text-[10px] font-black text-black dark:text-white font-mono">{onu.distance}</span>
+                          </div>
+                          <div className={cn("p-2 rounded-xl border flex flex-col justify-center", isCritical ? "bg-red-500/10 border-red-500/20" : isWarning ? "bg-amber-500/10 border-amber-500/20" : "bg-white/60 dark:bg-black/30 border-black/15 dark:border-white/5")}>
+                             <span className="text-[7px] font-black text-slate-500 uppercase block">RX Power</span>
+                             <span className={cn("text-[10px] font-mono font-black mt-0.5", isCritical ? "text-red-800 dark:text-red-500" : isWarning ? "text-amber-400" : "text-emerald-800 dark:text-emerald-400")}>
+                               {powerValue || (isBulkLoading ? '...' : '--')}
+                             </span>
+                          </div>
+                       </div>
+                     </div>
+                   );
+                 })}
+               </div>
+
+               {filteredOnus.length === 0 && portCards.length > 0 && (
+                  <div className="py-12 text-center text-xs text-slate-600 font-bold uppercase tracking-widest italic">No registered subscribers found matching requirements on this port index interface loop</div>
+               )}
+            </div>
+            
+
+            {portCards.length === 0 && !loading && (
+               <div className="py-20 text-center opacity-30 uppercase font-black text-xs tracking-widest italic flex flex-col items-center gap-2">
+                  <Monitor className="h-8 w-8 text-slate-500" />
+                  Please click Refresh Chassis to load hardware maps
+               </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-6 flex-1 bg-[#0c0c0c] overflow-y-auto">
+            <pre className="text-purple-400 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+              {rawConsole || "System execution log empty."}
+            </pre>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

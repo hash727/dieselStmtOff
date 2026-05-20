@@ -207,6 +207,11 @@ enum AreaType {
   RURAL
 }
 
+enum Protocol {
+  SSH
+  TELNET
+}
+
 model Olt {
   id                 String   @id @default(uuid())
   name               String   @unique
@@ -222,5 +227,8 @@ model Olt {
   description        String?
   status             Boolean  @default(true) // true = Active, false = Inactive
   createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  updatedAt          DateTime @updatedAt  
+  sshUsername        String?  @default("admin")
+  sshPassword        String?
+  protocol           Protocol @default(SSH)
 }

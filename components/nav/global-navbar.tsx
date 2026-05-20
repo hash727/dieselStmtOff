@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SystemHeartbeat } from "./system-heartbeat";
 import { useState } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 
 export function GlobalNavbar() {
   const [isVisible, setIsVisible] = useState(false);
@@ -101,20 +102,23 @@ export function GlobalNavbar() {
             ) : session ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-10 flex items-center gap-3 px-2 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-xl">
-                    <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center border border-blue-200 dark:border-blue-800">
-                      <User className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div className="hidden sm:flex flex-col items-start">
-                      <span className="text-[11px] font-black uppercase tracking-tighter leading-none text-slate-900 dark:text-zinc-100">
-                        {session.user?.name || "Operator"}
-                      </span>
-                      <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest">
-                        {userRole}
-                      </span>
-                    </div>
-                    <ChevronDown className="h-3 w-3 text-slate-400" />
-                  </Button>
+                <Button variant="ghost" className="relative h-10 flex items-center gap-3 px-2 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-xl">
+                  <Avatar className="h-8 w-8 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <AvatarImage src={session.user?.image || ""} alt={session.user?.name || "User"} />
+                    <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 text-[10px] font-black">
+                      {session.user?.name?.substring(0, 2).toUpperCase() || "OP"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="hidden sm:flex flex-col items-start">
+                    <span className="text-[11px] font-black uppercase tracking-tighter leading-none text-slate-900 dark:text-zinc-100">
+                      {session.user?.name || "Operator"}
+                    </span>
+                    <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest">
+                      {userRole}
+                    </span>
+                  </div>
+                  <ChevronDown className="h-3 w-3 text-slate-400" />
+                </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56 mt-2 rounded-2xl border-slate-200 dark:border-zinc-800">
                   <DropdownMenuLabel className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Account Details</DropdownMenuLabel>

@@ -2,6 +2,7 @@
 "use server";
 
 import { auth } from "@/auth";
+import { encrypt } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma"; // Your Prisma client instance
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -19,6 +20,8 @@ const OltSchema = z.object({
   area: z.enum(["URBAN", "RURAL"]),
   location: z.string().min(1),
   description: z.string().optional(),
+  sshUsername: z.string().optional(),
+  sshPassword: z.string().optional(),
 });
 
 // app/actions/olt.ts
@@ -28,6 +31,11 @@ export async function saveOlt(formData: any) {
 
   try {
     const validatedData = OltSchema.parse(formData);
+
+    // ENCRYPT THE PASSWORD
+    const encryptedPassword = validatedData?.sshPassword 
+      ? encrypt(validatedData?.sshPassword) 
+      : null;
 
     // Pro-Check: Check if IP is already taken by a DIFFERENT OLT name
     const existingIp = await prisma.olt.findFirst({
@@ -46,11 +54,15 @@ export async function saveOlt(formData: any) {
       update: {
         ...validatedData,
         installationDate: new Date(validatedData.installationDate),
+        sshUsername: validatedData?.sshUsername,
+        sshPassword: encryptedPassword,
       },
       create: {
         ...validatedData,
         ip: validatedData.ip,
         installationDate: new Date(validatedData.installationDate),
+        sshUsername: validatedData?.sshUsername,
+        sshPassword: encryptedPassword,
       },
     });
 
@@ -137,5 +149,32 @@ export async function getOltReportData() {
     return { success: true, olts, summary };
   } catch (error) {
     return { success: false, error: "Failed to generate report data" };
+  }
+}
+
+export async function updateOlt(id: string, formData: any) {
+  try {
+    const data = { ...formData };
+    
+    // 1. Only encrypt and update password if a new one is provided
+    if (data.sshPassword && data.sshPassword.trim() !== "") {
+      data.sshPassword = encrypt(data.sshPassword);
+    } else {
+      delete data.sshPassword; // Don't overwrite with empty string
+    }
+
+    // 2. Convert numeric fields
+    if (data.outerVlan) data.outerVlan = Number(data.outerVlan);
+    if (data.installationDate) data.installationDate = new Date(data.installationDate);
+
+    await prisma.olt.update({
+      where: { id },
+      data
+    });
+
+    revalidatePath("/olt/manage");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Update failed" };
   }
 }

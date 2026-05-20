@@ -215,7 +215,7 @@ const EnginePage = async ({
       <TabsContent value='logs' className='space-y-6 pt-4'>
 
           {/* Add this section to switch months */}
-          <div className="flex justify-between items-center bg-white p-4 rounded-xl border shadow-sm">
+          <div className="flex justify-between items-center bg-white dark:bg-zinc-900 p-4 rounded-xl border shadow-sm">
             <h2 className="font-semibold text-lg">Viewing Data for {new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
             <ReportFilter currentMonth={selectedMonth} currentYear={selectedYear} />
           </div>

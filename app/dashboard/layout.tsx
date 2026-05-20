@@ -16,7 +16,7 @@ const DashboardLayout = async ({children}: {children: React.ReactNode}) => {
     }
 
     const activeOfficeId = user?.activeOfficeId || user?.officeId;
-    const isAdmin = user?.role === "ADMIN";
+    const isAdmin = user?.role === "ADMIN" || user?.role === "MANAGER";
 
     // FIX: Extract only the string IDs from the array of objects
     const assignedOfficeIds = user.assignedOffices.map((office: any) => 
@@ -44,7 +44,7 @@ const DashboardLayout = async ({children}: {children: React.ReactNode}) => {
     return (
         <TooltipProvider>
             <SidebarProvider>
-                <AppSidebar />
+                <AppSidebar role={session?.user?.role}/>
                 <main className='w-full bg-slate-50/50 min-h-screen'>
                     <header className='flex h-16 items-center justify-between border-b bg-slate-100 dark:bg-slate-900 px-6'>
                         <div className='flex items-center gap-4'>

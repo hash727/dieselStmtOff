@@ -38,7 +38,7 @@
     "**/*.mts",
     "types/next-auth.d.ts",
     "app/dashboard/engine/engine-form.tsxbak"
-  ],
+, "app/olt/_components/NetlinkManageSheet_bak.tsxbak", "app/olt/_components/syrotech-manage-sheet_tsx"  ],
   "exclude": [
     "node_modules"
   ]

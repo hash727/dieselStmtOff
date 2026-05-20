@@ -4,11 +4,12 @@ import { PDFDownloadLink } from "@react-pdf/renderer";
 import { StatementPDF } from "./statement-pdf";
 import { Button } from "@/components/ui/button";
 import { FileDown, Loader2 } from "lucide-react";
+import { NewStatementPDF } from "./new-statement-pdf";
 
 export default function ExportPdfButton({ data, officeName, summary }: any) {
   return (
     <PDFDownloadLink
-      document={<StatementPDF data={data} officeName={officeName} summary={summary} />}
+      document={<NewStatementPDF data={data} officeName={officeName} summary={summary} />}
       fileName={`EMS-Statement-${officeName}.pdf`}
     >
       {({ loading }) => (

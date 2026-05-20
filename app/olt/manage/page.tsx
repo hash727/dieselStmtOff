@@ -34,10 +34,10 @@ export default async function ManageOlts() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="list" className="pt-4">
-           {/* You would fetch data here and pass to OltTable */}
+        {/* <TabsContent value="list" className="pt-4">
+           
            <OltTable olts={olts}/> 
-        </TabsContent>
+        </TabsContent> */}
 
         <TabsContent value="add" className="pt-4">
            <OltForm />
