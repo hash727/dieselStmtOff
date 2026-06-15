@@ -9,19 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { 
   Loader2, RefreshCw, Terminal, LayoutList, Search, 
   ChevronRight, Users, Cpu, Server, ShieldAlert, BarChart3, Zap, 
-  ArrowLeft
+  ArrowLeft,
+  FileSpreadsheet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { exportAlphionInventoryToExcel } from "@/lib/alphion-olt-report";
 
 export function OltManageSheet({ olt, isOpen, onOpenChange }: any) {
   const [loading, setLoading] = useState(false);
   const [isBulkLoading, setIsBulkLoading] = useState(false);
   const [onuData, setOnuData] = useState<any[]>([]);
   const [powerData, setPowerMap] = useState<Record<string, string>>({});
+  const [onuStates, setOnuStates] = useState<Record<string, string>>({});
+  const [onuConfigs, setOnuConfigs] = useState<Record<string, string>>({});
+
   const [rawConsole, setRawConsole] = useState<string>("");
   const [viewMode, setViewMode] = useState<"table" | "raw">("table");
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,6 +39,32 @@ export function OltManageSheet({ olt, isOpen, onOpenChange }: any) {
 
   const [statusFilter, setStatusFilter] = useState<string | "ALL">("ALL")
 
+  // =========================================================================
+  // 🚀 ✅ CRITICAL FIX: DYNAMIC COMPONENT LIFECYCLE REFRESH WORKER HOOK
+  // Triggered instantly when sheet opens or whenever a different OLT is clicked
+  // =========================================================================
+  useEffect(() => {
+    if (isOpen && olt?.id) {
+      console.log(`[NOC LAYER] Context shifting active target to OLT: ${olt.name} (${olt.ip})`);
+      
+      // 🧼 Phase A: Total Cache Flush to completely eliminate ghost state rows
+      setOnuData([]);
+      setPowerMap({});
+      setOnuStates({});
+      setOnuConfigs({});
+      setServiceCards([]);
+      setRawConsole("");
+      setSearchQuery("");
+      setSelectedCard(null);
+      setSelectedPon(null);
+      setSelectedOnu(null);
+      setStatusFilter("ALL");
+
+      // 🔄 Phase B: Automatically execute a fresh baseline background retrieval
+      fetchLiveDetails();
+    }
+  }, [isOpen, olt?.id]); // Deep link monitors active sheet triggers
+
   // --- 1. CORE SYNC (ONU List) ---
   const fetchLiveDetails = async () => {
     setLoading(true);
@@ -42,9 +73,17 @@ export function OltManageSheet({ olt, isOpen, onOpenChange }: any) {
       const res = await getOltOnuDetails(olt.id);
       if (res && res.success) {
         const result = res as { data: any[]; raw: string };
-        setOnuData(result.data || []);
+        const fetchedDataset = result.data || [];
+
+        setOnuData(fetchedDataset);
         setRawConsole(result.raw || "");
-        toast.success("Inventory Synchronized");
+        toast.success(`${olt?.make} Diagnostics Inventory Synced`);
+
+        // Automatically focus on the first available Slot index card for high-density setups
+        if (fetchedDataset.length > 0) {
+          const firstCardId = fetchedDataset[0].pon.split('/')[0];
+          setSelectedCard(firstCardId);
+        }
       }
     } catch (error) {
       toast.error("NOC Bridge Timeout");
@@ -145,13 +184,24 @@ export function OltManageSheet({ olt, isOpen, onOpenChange }: any) {
 
  
 
+  // --- 5. INTERACTIVE SERVICE CARD DISPLAY INSIDERS ---
   const handleOnuClick = async (onu: any) => {
     setSelectedOnu(onu);
     setLoadingServices(true);
     try {
       const res = await getOnuServices(olt.id, onu.pon);
-      if (res.success) setServiceCards((res as any).data);
-    } catch (e) { toast.error("Service Fetch Failed"); } finally { setLoadingServices(false); }
+      if (res.success && res.data) {
+        const resultData = res as { data: any[]; runningConfig?: string };
+        setServiceCards(resultData.data);
+        if (resultData.runningConfig) {
+          setOnuConfigs(prev => ({ ...prev, [onu.pon]: resultData.runningConfig || "" }));
+        }
+      }
+    } catch (e) { 
+      toast.error("VLAN configuration bridge query failed"); 
+    } finally { 
+      setLoadingServices(false); 
+    }
   };
 
   
@@ -287,14 +337,28 @@ export function OltManageSheet({ olt, isOpen, onOpenChange }: any) {
                     
                   </div>
                   {!selectedOnu && (
-                      <div className="relative w-[400px]">
-                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                        <Input
-                          placeholder="Search SN, Account or Name..."
-                          className="pl-10 h-9 bg-slate-50 dark:bg-zinc-900 border-none rounded-xl text-xs font-bold"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                        />
+                    <div className="flex items-center gap-3">
+                        {/* ✅ ALPHION REFINEMENT ACTION EXPORT EXCEL LINK CHIP */}
+                        {filteredOnus.length > 0 && !selectedOnu && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => exportAlphionInventoryToExcel(olt.name, olt.ip, selectedCard!, selectedPon, filteredOnus, powerData)}
+                            className="h-8 border-slate-200 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-800 text-slate-600 dark:text-slate-300 font-bold text-[10px] uppercase rounded flex items-center gap-1.5 transition-colors"
+                          >
+                            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                            Export Slot Data
+                          </Button>
+                        )}
+                        <div className="relative w-[400px]">
+                          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                          <Input
+                            placeholder="Search SN, Account or Name..."
+                            className="pl-10 h-9 bg-slate-50 dark:bg-zinc-900 border-none rounded-xl text-xs font-bold"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                          />
+                        </div>
                       </div>
                     )}
                 </div>

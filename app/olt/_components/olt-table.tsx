@@ -19,6 +19,7 @@ import { OltManageSheet } from "./olt-manage-sheet";
 import { OltEditDialog } from "./olt-edit-dialog";
 import { NetlinkManageSheet } from "./NetlinkManageSheet";
 import { SyrotechManageSheet } from "./syrotech-manage-sheet";
+import { AlphionOltManageSheet } from "./alphion-manage-sheet";
 
 export default function OltTable({ olts }: { olts: Olt[] }) {
 
@@ -178,7 +179,7 @@ export default function OltTable({ olts }: { olts: Olt[] }) {
             onOpenChange={(open: boolean) => !open && setSelectedOlt(null)} 
           />
       ) : (
-        <OltManageSheet 
+        <AlphionOltManageSheet 
           olt={selectedOlt} 
           isOpen={!!selectedOlt} 
           onOpenChange={(open: boolean) => !open && setSelectedOlt(null)} 

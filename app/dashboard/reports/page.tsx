@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { FileDown, Loader2 } from "lucide-react";
 import ExportPdfButton from "@/components/reports/export-pdf-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import CompleteExportPdfButton from "@/components/reports/complete-export-pdf-button";
+import { getSubDivisionExchangeSummary } from "@/app/actions/reports";
+import ReportToolbar from "@/components/reports/report-toolbar";
 
 export default async function ReportsPage({ 
   searchParams 
@@ -38,7 +41,7 @@ export default async function ReportsPage({
   const prevYear = prevMonthDate.getFullYear();
 
   // 3. Unified Parallel Fetch
-  const [logs, dieselLogs, engineProfile, currentMonthlyData, prevMonthlyData, officeInfo] = await Promise.all([
+  const [logs, dieselLogs, engineProfile, currentMonthlyData, prevMonthlyData, officeInfo, dieselPurchase, exchangeSummaryRes] = await Promise.all([
     prisma.engineLog.findMany({
       where: { officeId: activatedOfficeId, date: { gte: startDate, lte: endDate } },
       orderBy: { date: 'asc' }
@@ -54,16 +57,27 @@ export default async function ReportsPage({
     prisma.monthlyBalance.findUnique({
       where: { officeId_month_year: { officeId: activatedOfficeId!, month: prevMonth, year: prevYear } }
     }),
-    prisma.office.findUnique({ where: { id: activatedOfficeId }, select: { name: true } })
+    prisma.office.findUnique({ where: { id: activatedOfficeId }, select: { name: true } }),
+    prisma.dieselPurchase.findMany({
+      where:{userId: session?.user?.id!}, 
+      select: { fleetCardNumber: true}
+    }),
+    getSubDivisionExchangeSummary({ month: month, year: year }),
   ]);
 
-  // 4. FIX: Robust Opening Balance Calculation
+  // Extract fleetcardnumber
+  const dbFleetCardNumber = dieselPurchase.length > 0 && dieselPurchase[0]?.fleetCardNumber
+    ? dieselPurchase[0].fleetCardNumber
+    : "000000000000"
+
+  // Robust Opening Balance Calculation
   const reportOpeningBalance = currentMonthlyData?.openingBalance 
     ?? prevMonthlyData?.closingBalance 
     ?? 0;
 
   let runningBalance = reportOpeningBalance;
   const engineSlNo = engineProfile?.serialNumber || "N/A";
+  
 
   // 5. Merge & Map Ledger (One Pass)
   const unifiedData = [
@@ -83,7 +97,7 @@ export default async function ReportsPage({
     return { 
       ...entry, 
       runningBalance,
-      engineSerial: engineSlNo 
+      engineSerial: engineSlNo,
     };
   });
 
@@ -94,9 +108,14 @@ export default async function ReportsPage({
       rowType: 'OPENING', // New type for your PDF logic
       runningBalance: reportOpeningBalance,
       engineSerial: engineSlNo,
+      
     },
     ...transactions
   ];
+
+  const exchangeList = exchangeSummaryRes.success ? exchangeSummaryRes.data : [];
+
+  const activeOffice = exchangeList[0] || { officeName: "Office Summary", openingBalance: 0, stockBalance: 0, totalEngineRun: 0, totalConsumption: 0 };
 
   // 6. Final Metrics for Summary Cards/PDF
   const totalConsumption = logs.reduce((sum, log) => sum + (log.dieselConsumption || 0), 0);
@@ -106,42 +125,65 @@ export default async function ReportsPage({
     ? statementWithBalance[statementWithBalance.length - 1].runningBalance 
     : reportOpeningBalance;
 
-    
+  const engineMake = engineProfile?.make;
+  const engineCapacity = engineProfile?.capacity;
+  const engineInstalDate= engineProfile?.installationDate;
+
+  console.log(`EngineMake: ${engineMake} <<>> Capacity: ${engineCapacity} <<>> DOI: ${engineInstalDate}`)
 
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold text-bsnl-blue">Monthly Reports</h1>
       
-      <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+      <div className="w-full bg-white rounded-xl border border-slate-200 p-4 shadow-sm transition-all hover:shadow-md">
+  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    
+    {/* Left Sub-Section: Primary Navigational Filtering Controls */}
+    <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-y-0 sm:gap-3 w-full lg:w-auto">
+      <div className="shrink-0">
         <ReportFilter currentMonth={month} currentYear={year} />
+      </div>
+      <div className="hidden sm:block h-6 w-px bg-slate-200" />
+      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider hidden md:block">
+        Sub-Division Telemetry Center
+      </p>
+    </div>
+
+    {/* Right Sub-Section: Interactive Form Controls & Export Actions Combined */}
+    {statementWithBalance.length > 0 && (
+      <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-end gap-3 w-full lg:w-auto justify-end border-t pt-3 lg:border-t-0 lg:pt-0 border-slate-100">
         
-        {/* {finalData.length > 0 && (
-          <PDFDownloadLink 
-            document={<StatementPDF data={finalData} officeName={officeInfo?.name} />}
-            fileName={`BSNL_Report_${officeInfo?.name}_${month}_${year}.pdf`}
-            className="bg-bsnl-orange text-white px-4 py-2 rounded-lg font-medium hover:bg-orange-600 transition"
-          >
-            {({ loading }) => (loading ? "Preparing PDF..." : "Download Report")}
-          </PDFDownloadLink>
-        )} */}
-        {/* {finalData.length > 0 && (
-            <DownloadReportButton 
-              data={finalData} 
-              officeName={officeInfo?.name} 
-              month={month} 
-              year={year} 
-              openingBalance={reportOpeningBalance}
-            />
-        )} */}
-        {statementWithBalance.length > 0 && (
+        {/* Core Stock Exporter Trigger */}
+        <div className="shrink-0 flex items-end">
           <ExportPdfButton 
-              data={statementWithBalance} 
-              officeName={officeInfo?.name || "Office"}
-              summary={{ currentStock, totalRuntime, totalConsumption }}
+            data={statementWithBalance} 
+            officeName={officeInfo?.name || "Office"}
+            summary={{ currentStock, totalRuntime, totalConsumption }}
           />
-        )}
+        </div>
+
+        {/* Separated Interactive Client Control Panel Toolbar */}
+        <div className="flex-1 sm:flex-none">
+          <ReportToolbar 
+            statementWithBalance={statementWithBalance}
+            officeName={officeInfo?.name || "Office"}
+            exchangeList={exchangeList || []}
+            activeOffice={activeOffice}
+            engineMake={engineMake}
+            engineCapacity={engineCapacity}
+            engineInstalDate={engineInstalDate}
+            selectedMonth={month}
+            selectedYear={year}
+            fleetCardNumber={dbFleetCardNumber}
+          />
+        </div>
         
       </div>
+    )}
+
+  </div>
+</div>
+
 
       {statementWithBalance.length === 0 ? (
         <div className="text-center py-20 text-muted-foreground border-2 border-dashed rounded-xl">

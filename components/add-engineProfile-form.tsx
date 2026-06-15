@@ -19,12 +19,14 @@ import { getServiceStatus } from '@/lib/service-status';
 
 type EngineProfileFormProps = {
     officeId: string;
+    officeName: string;
     initialData: EngineFormValues | null | undefined;
     isReadOnly: boolean;
 }
 
 const EngineProfileForm = ({ 
     officeId, 
+    officeName,
     initialData,
     isReadOnly, 
 }: EngineProfileFormProps) => {
@@ -64,7 +66,7 @@ const EngineProfileForm = ({
             <div className="space-y-1">
                 <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100 flex items-center gap-2">
                     <Settings2 className="h-5 w-5 text-blue-500" />
-                    Engine Technical Profile
+                    Engine Technical Profile: <span className="text-blue-500">{officeName ? ` ${officeName}` : ""}</span>
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-zinc-400">Specifications and maintenance history of the generator.</p>
             </div>
@@ -166,68 +168,137 @@ const EngineProfileForm = ({
 
             {/* Installation Date */}
             <form.Field name="installationDate">
-                {(field) => (
-                    <div className='flex flex-col space-y-2.5'>
-                        <Label className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-zinc-400 font-bold">Installation Date</Label>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant={'outline'}
-                                    disabled={isReadOnly}
-                                    className={cn(
-                                        "justify-start text-left font-normal bg-white dark:bg-zinc-950 border-slate-200 dark:border-zinc-800",
-                                        !field.state.value && "text-muted-foreground"
-                                    )}
-                                >
-                                    <CalendarIcon className='mr-2 h-4 w-4 opacity-50' />
-                                    {field.state.value ? format(field.state.value, "PPP") : "Pick a date"}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className='w-auto p-0 border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950' align="start">
-                                <Calendar
-                                    mode='single'
-                                    selected={field.state.value}
-                                    onSelect={(date) => field.handleChange(date)}
-                                    initialFocus
-                                />
-                            </PopoverContent>
-                        </Popover>
-                    </div>
-                )}
+            {(field) => {
+                const currentValue = field.state.value 
+                ? new Date(field.state.value) 
+                : undefined;
+
+                const isValidDate = currentValue && !isNaN(currentValue.getTime());
+                const currentYear = new Date().getFullYear();
+                const startYear = 2000; 
+
+                return (
+                <div className='flex flex-col space-y-2.5'>
+                    <Label className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-zinc-400 font-bold">
+                    Installation Date
+                    </Label>
+                    <Popover>
+                    <PopoverTrigger asChild>
+                        <Button
+                        variant={'outline'}
+                        disabled={isReadOnly}
+                        className={cn(
+                            "justify-start text-left font-mono text-xs font-semibold bg-white dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 h-10 rounded-lg w-full",
+                            !isValidDate && "text-muted-foreground font-normal"
+                        )}
+                        >
+                        <CalendarIcon className='mr-2 h-4 w-4 opacity-50 text-purple-500' />
+                        {isValidDate ? format(currentValue, "dd-MMM-yyyy") : "Select Year & Date"}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent 
+                        className='w-auto p-0 border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl rounded-lg overflow-hidden' 
+                        align="start"
+                    >
+                        <Calendar
+                        mode='single'
+                        selected={isValidDate ? currentValue : undefined}
+                        onSelect={(date) => {
+                            if (date) {
+                            field.handleChange(date);
+                            } else {
+                            field.handleChange(undefined);
+                            }
+                        }}
+                        captionLayout="dropdown" 
+                        fromYear={startYear}              
+                        toYear={currentYear}              
+                        disabled={(date) => date > new Date()} 
+                        initialFocus
+                        
+                        className="p-3 shadow-inner"
+                        classNames={{
+                            // ✅ FIXED: Reverted key to the standard 'dropdown' property to clear the type error
+                            caption_dropdowns: "flex justify-center gap-2 font-sans text-xs my-1 w-full",
+                            dropdown: "p-1.5 rounded border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-800 dark:text-slate-200 font-semibold cursor-pointer outline-none focus:border-purple-500 text-xs",
+                            caption_label: "hidden", 
+                        }}
+                        />
+                    </PopoverContent>
+                    </Popover>
+                </div>
+                );
+            }}
             </form.Field>
 
 
             {/* Last Service Date */}
             <form.Field name="lastServiceDate">
-                {(field) => (
-                    <div className='flex flex-col space-y-2.5'>
-                        <Label className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-zinc-400 font-bold">Last Service Date</Label>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant={'outline'}
-                                    disabled={isReadOnly}
-                                    className={cn(
-                                        "justify-start text-left font-normal bg-white dark:bg-zinc-950 border-slate-200 dark:border-zinc-800",
-                                        !field.state.value && "text-muted-foreground"
-                                    )}
-                                >
-                                    <CalendarIcon className='mr-2 h-4 w-4 opacity-50' />
-                                    {field.state.value ? format(field.state.value, "PPP") : "Pick a date"}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className='w-auto p-0 border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950' align="start">
-                                <Calendar
-                                    mode='single'
-                                    selected={field.state.value}
-                                    onSelect={(date) => field.handleChange(date)}
-                                    initialFocus
-                                />
-                            </PopoverContent>
-                        </Popover>
-                    </div>
-                )}
-            </form.Field>
+        {(field) => {
+            // 🚀 NORMALISATION LAYER: Safely convert incoming state data (ISO string or Date object)
+            const currentValue = field.state.value 
+            ? new Date(field.state.value) 
+            : undefined;
+
+            const isValidDate = currentValue && !isNaN(currentValue.getTime());
+            const currentYear = new Date().getFullYear();
+            const startYear = 2000; // Adjust according to your operational history
+
+            return (
+            <div className='flex flex-col space-y-2.5'>
+                <Label className="text-[11px] uppercase tracking-widest text-slate-500 dark:text-zinc-400 font-bold">
+                Last Service Date
+                </Label>
+                <Popover>
+                <PopoverTrigger asChild>
+                    <Button
+                    variant={'outline'}
+                    disabled={isReadOnly}
+                    className={cn(
+                        "justify-start text-left font-mono text-xs font-semibold bg-white dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 h-10 rounded-lg w-full",
+                        !isValidDate && "text-muted-foreground font-normal"
+                    )}
+                    >
+                    <CalendarIcon className='mr-2 h-4 w-4 opacity-50 text-purple-500' />
+                    {isValidDate ? format(currentValue, "dd-MMM-yyyy") : "Select Year & Date"}
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent 
+                    className='w-auto p-0 border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl rounded-lg overflow-hidden' 
+                    align="start"
+                >
+                    <Calendar
+                    mode='single'
+                    selected={isValidDate ? currentValue : undefined}
+                    onSelect={(date) => {
+                        if (date) {
+                        // 🚀 ISO STRING CASTING: Safely serialize back up to form state module
+                        field.handleChange(date);
+                        } else {
+                        field.handleChange(undefined);
+                        }
+                    }}
+                    // 🚀 STRATIFIED DROPDOWN NAVIGATION CONTROLS
+                    captionLayout="dropdown" 
+                    fromYear={startYear}              
+                    toYear={currentYear}              
+                    disabled={(date) => date > new Date()} // Block future maintenance logging
+                    initialFocus
+                    
+                    className="p-3 shadow-inner"
+                    classNames={{
+                        caption_dropdowns: "flex justify-center gap-2 font-sans text-xs my-1 w-full",
+                        dropdown: "p-1.5 rounded border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-800 dark:text-slate-200 font-semibold cursor-pointer outline-none focus:border-purple-500 text-xs",
+                        caption_label: "hidden", 
+                    }}
+                    />
+                </PopoverContent>
+                </Popover>
+            </div>
+            );
+        }}
+        </form.Field>
+
         </div>
 
         {!isReadOnly && (

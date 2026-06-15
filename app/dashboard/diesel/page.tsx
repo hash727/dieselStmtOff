@@ -6,6 +6,7 @@ import { Fuel, PlusCircle, History, TrendingDown } from "lucide-react";
 import DieselRefillForm from "@/components/diesel/diesel-refill-form";
 import DieselLedgerTable from "@/components/diesel/diesel-ledger-table";
 import AnomalyAlert from "@/components/diesel/anomaly-alert";
+import DieselPurchaseForm from "@/components/diesel/diesel-purchase-form";
 
 export const dynamic = 'force-dynamic';
 
@@ -102,7 +103,7 @@ const unifiedStatement = [
       <AnomalyAlert logs={statementWithBalance} />
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Diesel Management</h1>
-        <DieselRefillForm officeId={officeId} />
+        <DieselPurchaseForm officeId={officeId} />
       </div>
 
       {/* Summary Metrics */}

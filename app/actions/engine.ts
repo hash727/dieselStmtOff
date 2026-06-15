@@ -177,32 +177,143 @@ export async function deleteEnginelog(id: string) {
   }
 }
 
-export async function deleteLog(id: string, type: 'ENGINE' | 'DIESEL'){
-  const session = await auth()
-  if(!session?.user?.id) throw new Error("Unauthorized")
+
+// Old delete logs
+
+// export async function deleteLog(id: string, type: 'ENGINE' | 'DIESEL'){
+//   const session = await auth()
+//   if(!session?.user?.id) throw new Error("Unauthorized")
+  
+//   try {
+//     if(type === 'ENGINE'){
+//       await prisma.engineLog.delete({
+//         where: {
+//           id,
+//           officeId: session.user.officeId
+//         }
+//       })
+//     } else {
+//       await prisma.dieselLog.delete({
+//         where: {
+//           id,
+//           officeId: session.user.officeId
+//         }
+//       })
+//     }
+
+//     revalidatePath("/dashboard/engine")
+//     return { success: true }
+//   } catch (error) {
+//     console.error("Delete Error:", error)
+//     throw new Error("Failed to delete the record")
+//   }
+// }
+
+// New deletelog
+
+export async function deleteLog(id: string, type: 'ENGINE' | 'DIESEL') {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
   
   try {
-    if(type === 'ENGINE'){
+    if (type === 'ENGINE') {
       await prisma.engineLog.delete({
         where: {
           id,
-          officeId: session.user.officeId
+          // Guarding deletions to verify the user belongs to the target scope
+          officeId: session.user.officeId || undefined 
         }
-      })
+      });
     } else {
-      await prisma.dieselLog.delete({
-        where: {
-          id,
-          officeId: session.user.officeId
+      // Execute as an isolated Prisma Transaction to maintain double-entry sync states
+      await prisma.$transaction(async (tx) => {
+        
+        let targetQuantity = 0;
+        let targetDate: Date | null = null;
+        let officeId: string | null = null;
+
+        // Step 1: Look for the record inside the DieselPurchase table
+        const purchaseRecord = await tx.dieselPurchase.findUnique({
+          where: { id }
+        });
+
+        if (purchaseRecord) {
+          targetQuantity = purchaseRecord.quantity;
+          targetDate = purchaseRecord.purchaseDate;
+          officeId = purchaseRecord.officeId;
+
+          // Delete the purchase row
+          await tx.dieselPurchase.delete({ where: { id } });
+
+          // Clean up its legacy mirrored log entry based on date matching values
+          await tx.dieselLog.deleteMany({
+            where: {
+              officeId: officeId,
+              date: targetDate,
+              quantity: targetQuantity
+            }
+          });
+        } else {
+          // Step 2: Fallback to checking DieselLog table if triggered from the legacy UI ledger view
+          const logRecord = await tx.dieselLog.findUnique({
+            where: { id }
+          });
+
+          if (logRecord) {
+            targetQuantity = logRecord.quantity || 0;
+            targetDate = logRecord.date;
+            officeId = logRecord.officeId;
+
+            await tx.dieselLog.delete({ where: { id } });
+
+            // Remove matching purchase record if one exists
+            await tx.dieselPurchase.deleteMany({
+              where: {
+                officeId: officeId,
+                purchaseDate: targetDate,
+                quantity: targetQuantity
+              }
+            });
+          }
         }
-      })
+
+        // Step 3: Rebalance monthly ledger statistics if records were identified and removed
+        if (officeId && targetDate && targetQuantity > 0) {
+          const month = targetDate.getMonth() + 1;
+          const year = targetDate.getFullYear();
+
+          const existingBalance = await tx.monthlyBalance.findUnique({
+            where: {
+              officeId_month_year: { officeId, month, year }
+            }
+          });
+
+          if (existingBalance) {
+            if (existingBalance.isFrozen) {
+              throw new Error("Cannot alter records belonging to a frozen audit period.");
+            }
+
+            // Deduct deleted fuel quantity out of closing ledger balances
+            await tx.monthlyBalance.update({
+              where: { id: existingBalance.id },
+              data: {
+                closingBalance: Math.max(0, (existingBalance.closingBalance || 0) - targetQuantity)
+              }
+            });
+          }
+        }
+      });
     }
 
-    revalidatePath("/dashboard/engine")
-    return { success: true }
-  } catch (error) {
-    console.error("Delete Error:", error)
-    throw new Error("Failed to delete the record")
+    revalidatePath("/dashboard/engine");
+    return { success: true };
+    
+  } catch (error: any) {
+    console.error("Delete Error:", error);
+    return { 
+      success: false, 
+      error: error.message || "Failed to remove the target ledger record securely." 
+    };
   }
 }
 
@@ -307,6 +418,132 @@ export async function addDieselRefill(prevState: any, formData: FormData) {
   } catch (error) {
     console.error("Diesel Addition error: ", error);
     return { success: false, error: "Failed to add diesel refill" };
+  }
+}
+
+// Diesel purchase code
+export async function addDieselPurchase(prevState: any, formData: FormData) {
+  // 1. Session Authentication Check matching your exact project pattern
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, error: "Unauthorized access" };
+
+  try {
+    // 2. Destructure and Type-Cast split Form Parameters
+    const invoiceNumber = formData.get("invoiceNumber") as string;
+    const fleetCardNumber = formData.get("fleetCardNumber") as string;
+    const dateStr = formData.get("purchaseDate") as string; // YYYY-MM-DD
+    const timeStr = formData.get("purchaseTime") as string; // HH:MM
+    const quantity = parseFloat(formData.get("quantity") as string);
+    const amount = parseFloat(formData.get("amount") as string);
+    const sapDocumentNo = formData.get("sapDocumentNo") as string || null;
+    const remarks = formData.get("remarks") as string || null;
+    const officeId = formData.get("officeId") as string;
+
+    // 3. Strict Structural Core Form Boundary Validation
+    if (!invoiceNumber || !fleetCardNumber || !dateStr || !officeId || isNaN(quantity) || isNaN(amount)) {
+      return { success: false, error: "All required invoice parameters must be specified" };
+    }
+
+    if (quantity <= 0 || amount <= 0) {
+      return { success: false, error: "Quantity and Total Amount metrics must be greater than zero" };
+    }
+
+    // 4. ISO-8601 Temporal Stitching: Combines date & time safely without offset shifts
+    const formattedTime = timeStr ? `${timeStr}:00` : "00:00:00";
+    const fullPurchaseDate = new Date(`${dateStr}T${formattedTime}`);
+
+    if (isNaN(fullPurchaseDate.getTime())) {
+      return { success: false, error: "Invalid calendar date or timestamp signature layout" };
+    }
+
+    // 5. Atomic Prisma Transaction Execution Loop
+    const newPurchase = await prisma.$transaction(async (tx) => {
+      
+      // Step A: Create the purchase entry line with your new strict parameters
+      const purchaseEntry = await tx.dieselPurchase.create({
+        data: {
+          invoiceNumber,
+          purchaseDate: fullPurchaseDate,
+          amount,
+          quantity,
+          fleetCardNumber,
+          sapDocumentNo,
+          remarks,
+          officeId,
+          userId: session.user.id,
+        },
+        include: {
+          office: {
+            include: {
+              engine: true
+            }
+          }
+        }
+      });
+
+      // Step B: Backwards-compatibility log mirror generation
+      await tx.dieselLog.create({
+        data: {
+          date: fullPurchaseDate,
+          quantity: quantity,
+          officeId,
+          userId: session.user.id,
+        }
+      });
+
+      // Step C: Reactive Monthly Accounting Balance Updates
+      const month = fullPurchaseDate.getMonth() + 1; // JS Months run 0-11
+      const year = fullPurchaseDate.getFullYear();
+
+      const existingBalance = await tx.monthlyBalance.findUnique({
+        where: {
+          officeId_month_year: { officeId, month, year }
+        }
+      });
+
+      if (existingBalance) {
+        if (existingBalance.isFrozen) {
+          throw new Error("This accounting period has been frozen. Modification blocked.");
+        }
+        await tx.monthlyBalance.update({
+          where: { id: existingBalance.id },
+          data: {
+            closingBalance: (existingBalance.closingBalance || existingBalance.openingBalance) + quantity
+          }
+        });
+      } else {
+        await tx.monthlyBalance.create({
+          data: {
+            officeId,
+            month,
+            year,
+            openingBalance: 0,
+            closingBalance: quantity,
+            isFrozen: false
+          }
+        });
+      }
+
+      return purchaseEntry;
+    });
+
+    // 6. Dynamic Context Aggregation for localized project alert toast messages
+    const officeName = newPurchase.office?.name || "Unknown Office";
+    const serialNo = newPurchase.office?.engine?.serialNumber || "N/A";
+
+    revalidatePath("/dashboard/engine"); // Refreshes tables and cache sheets dynamically
+    
+    return { 
+      success: true,
+      message: `LOGGED PURCHASE FOR ${officeName.toUpperCase()} (${serialNo}) | ${quantity}L | ₹${amount.toLocaleString('en-IN')}`,
+    };
+
+  } catch (error: any) {
+    console.error("Diesel Purchase Action error: ", error);
+    return { 
+      success: false, 
+      error: error.message || "Failed to commit diesel purchase invoice records" 
+    };
   }
 }
 

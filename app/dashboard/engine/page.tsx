@@ -423,6 +423,7 @@ const EnginePage = async ({
       <TabsContent value="profile">
         <EngineProfileForm 
           officeId={session?.user.officeId}
+          officeName={officeInfo?.name || "Office"}
           initialData={engineProfile}
           isReadOnly={!canEdit}
         />

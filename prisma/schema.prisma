@@ -26,6 +26,7 @@ model Office {
   engineLogs      EngineLog[]
   dieselLogs      DieselLog[]
   monthlyBalances MonthlyBalance[]
+  dieselPurchases DieselPurchase[]
 }
 
 enum UserRole {
@@ -56,6 +57,7 @@ model User {
   engineLogs      EngineLog[]
   dieselLogs      DieselLog[]
   engineUpdates   Engine[]    @relation("EngineUpdates")
+  dieselPurchases DieselPurchase[]
 }
 
 model Account {
@@ -159,6 +161,36 @@ model MonthlyBalance {
   office         Office  @relation(fields: [officeId], references: [id], onDelete: Cascade)
 
   @@unique([officeId, month, year])
+}
+
+
+model DieselPurchase {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceNumber   String   // Matches your item.invoicenumber field
+  purchaseDate    DateTime // Explicit date of purchase (independent of row creation time)
+  amount          Float    // Invoice Amt (Rs.)
+  quantity        Float    // Purchased Qty (Ltrs)
+  sapDocumentNo   String?  // Optional SAP Doc Number mapping
+  remarks         String?  // Optional structural remarks field
+
+  // ADDED: Explicit Fleet Card Identifier for strict audit logging
+  fleetCardNumber String   @db.VarChar(50) 
+  
+  // Audit tracking fields
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // System Relations 
+  officeId        String   @db.Uuid // Links purchase line-items directly to specific exchanges
+  office          Office   @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  
+  userId          String   @db.Uuid // Track which operational staff member uploaded the invoice
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes to optimize performance on date range searches and analytics queries
+  @@index([purchaseDate])
+  @@index([officeId])
+  @@index([fleetCardNumber]) 
 }
 
 
